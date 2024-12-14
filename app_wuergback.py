@@ -45,8 +45,9 @@ def get_default_source_dir():
         os.makedirs(default_source_dir)
     return default_source_dir
 
-def load_config():
+def load_config(param=CONFIG_FILE):
     """Lädt die Konfiguration aus der JSON-Datei oder erstellt eine Standardkonfiguration."""
+    
     if not os.path.exists(CONFIG_FILE):
         default_config = {
             "source_directories": [get_default_source_dir()],
@@ -63,7 +64,8 @@ def load_config():
             json.dump(default_config, file, indent=4)
         create_default_structure(default_config["source_directories"][0])
         logging.info("Standardkonfiguration erstellt. Bitte überprüfen Sie die Datei %s.", CONFIG_FILE)
-    with open(CONFIG_FILE, "r") as file:
+
+    with open(param, "r") as file:
         return json.load(file)
 
 def create_default_structure(source_dir):
@@ -133,33 +135,63 @@ def create_backup(source_dir, local_buffer_dir, backup_dir, password, parameter7
         logging.error(BACKUP_ERROR.format(e=e))
         return BACKUP_ERROR.format(e=e)
 
-def main():
+def main(konfigurationsparameter):
     """Hauptfunktion des Skripts."""
+    if not konfigurationsparameter:
+        logging.error("Schwerwiegender Fehler: %s", e)
+        return
     try:
-        # Selbsttest ausführen
-        test_root, source_dir, target_dir = selftest()
+        execute_selbsttest()
+        logging.info(f"Starte Verarbeitung der Backup-Konfigurationen: {konfigurationsparameter}") 
+        for k in konfigurationsparameter: 
+            geladen = konfiguration_laden(k)
+            if geladen:    
+                backups_parallel_erstellen(geladen)    
+            else:
+                logging.warning(f"w: Konnte nicht geladen werden: {k}") 
+    except Exception as e:
+        logging.error("Schwerwiegender Fehler in main(): %s", e)
 
-        # Konfiguration laden
-        config = load_config()
-        local_buffer_dir = config.get("local_buffer_source_directory", DEFAULT_LOCAL_BUFFER_DIR)
-        backup_dir = config.get("backup_directory_win", DEFAULT_BACKUP_DIR_WIN) if platform.system() == "Windows" else config.get("backup_directory_linux", DEFAULT_BACKUP_DIR_LINUX)
-        source_dirs = config.get("source_directories", [get_default_source_dir()])
-        password = config.get("password", DEFAULT_PASSWORD)
-        parameter7z = config.get("parameter7z", DEFAULT_parameter7z)
-        exe7z = get_exe7z(config)
+def backups_parallel_erstellen(geladen_und_geprueft):
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [executor.submit(create_backup, source_dir, local_buffer_dir, backup_dir, password, parameter7z, exe7z) for source_dir in source_dirs]
+        for future in as_completed(futures):
+            result = future.result()
+            logging.info(result)
 
-        # Backups parallel erstellen
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = [executor.submit(create_backup, source_dir, local_buffer_dir, backup_dir, password, parameter7z, exe7z) for source_dir in source_dirs]
+def execute_selbsttest():
+        try:
+           test_root, source_dir, target_dir = selftest()
+        except Exception as e:
+            logging.error("Schwerwiegender Fehler: %s", e)
 
-            for future in as_completed(futures):
-                result = future.result()
-                logging.info(result)
+def konfiguration_laden(welche):
+    try:
+        c = load_config(welche)
+        local_buffer_dir = c.get("local_buffer_source_directory", DEFAULT_LOCAL_BUFFER_DIR)
+        if platform.system() == "Windows": 
+            backup_dir = c.get("backup_directory_win", DEFAULT_BACKUP_DIR_WIN) 
+        else:
+            backup_dir = c.get("backup_directory_linux", DEFAULT_BACKUP_DIR_LINUX)
+
+        # Check if not in geladen: 
+        if not c.get("exe7z"):
+            raise KeyError("The key exe7z was not found in the loaded JSON data.") 
+        if not c.get("passwort"):
+            raise KeyError("The key passwort was not found in the loaded JSON data.") 
+        if not c.get("source_directories"):
+            raise KeyError("The key source_directories was not found in the loaded JSON data.") 
+        if not c.get("parameter7z"):
+            raise KeyError("The key parameter7z was not found in the loaded JSON data.") 
+
+        return True, create_backup, c.get("source_directories"), local_buffer_dir, backup_dir, c.get("passwort"), c.get("parameter7z"), c.get("exe7z")
     except Exception as e:
         logging.error("Schwerwiegender Fehler: %s", e)
+        return False
+
 
 def selftest():
-    """Führt einen Selbsttest durch, indem ein Testverzeichnis erstellt wird."""
+    """Führt einen Selbsttest durch, in dem ein Testverzeichnis erstellt wird."""
     temp_dir = tempfile.gettempdir()
     test_root = os.path.join(temp_dir, "wuergback_test")
     source_dir = os.path.join(test_root, "wuergback_source")
@@ -181,4 +213,5 @@ def selftest():
     return test_root, source_dir, target_dir
 
 if __name__ == "__main__":
-    main()
+    konfigurationen=['RN049932_to_H', 'Konfig_Zwei' ]
+    main(konfigurationen)
