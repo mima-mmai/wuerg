@@ -63,7 +63,7 @@ def load_config(param=None):
         }
         with open(param, "w") as file:
             json.dump(default_config, file, indent=4)
-        create_default_structure(default_config["source_directories"][0])
+        create_default_structure(param["source_directories"][0])
         logging.info("Standardkonfiguration erstellt. Bitte überprüfen Sie die Datei %s.", param)
     with open(param, "r") as file:
         return json.load(file)
@@ -76,12 +76,34 @@ def create_default_structure(source_dir):
     with open(readme_path, "w") as file:
         file.write(README_CONTENT)
 
+def konfiguration_laden(welche):
+        c = load_config(welche)
+        # Load and check 
+        local_buffer_dir = c.get("local_buffer_source_directory", DEFAULT_LOCAL_BUFFER_DIR)
+        if platform.system() == "Windows": 
+            backup_dir = c.get("backup_directory_win", DEFAULT_BACKUP_DIR_WIN) 
+        else:
+            backup_dir = c.get("backup_directory_linux", DEFAULT_BACKUP_DIR_LINUX)
+        
+        def schluessel(s):
+            retVal= c.get(s)
+            if not retVal:
+                raise KeyError(f"The key exe7z [{s}] was not found in the loaded JSON data [{welche}]") 
+            return retVal
+        
+        exe7z=schluessel("exe7z_path")
+        password = c.get("password")
+        source_directories = c.get("source_directories")
+        parameter7z = c.get("parameter7z")
+        return create_backup, source_directories, local_buffer_dir, backup_dir, password, parameter7z, exe7z
+
 def get_exe7z(config):
     """Gibt den Pfad zur 7-Zip-Executable zurück."""
     exe7z_path = config.get("exe7z_path", DEFAULT_exe7z_PATH_WIN if platform.system() == "Windows" else DEFAULT_exe7z_PATH_LINUX)
     if not os.path.exists(exe7z_path):
         raise FileNotFoundError(f"7-Zip-Executable nicht gefunden: {exe7z_path}")
     return exe7z_path
+
 
 def calculate_hash(file_path):
     """Berechnet den SHA256-Hash einer Datei."""
@@ -146,12 +168,12 @@ def main(konfigurationsparameter):
         for k in konfigurationsparameter: 
             result = konfiguration_laden(k)
             if result:
-                geladen, create_backup_func, source_dirs, local_buffer_dir, backup_dir, password, parameter7z, exe7z = result
+                create_backup_func, source_dirs, local_buffer_dir, backup_dir, password, parameter7z, exe7z = result
                 backups_parallel_erstellen(create_backup_func, source_dirs, local_buffer_dir, backup_dir, password, parameter7z, exe7z)    
             else:
-                logging.warning(f"Konnte nicht geladen werden: {k}") 
+                raise Exception(f"Konnte nicht geladen werden: {k}") 
     except Exception as e:
-        logging.error("Schwerwiegender Fehler in main(): %s", e)
+        raise RuntimeError("Schwerwiegender Fehler in main(): %s", e)
 
 def backups_parallel_erstellen(create_backup_func, source_dirs, local_buffer_dir, backup_dir, password, parameter7z, exe7z):
     with ThreadPoolExecutor(max_workers=4) as executor:
@@ -165,30 +187,6 @@ def execute_selbsttest():
         test_root, source_dir, target_dir = selftest()
     except Exception as e:
         logging.error("Schwerwiegender Fehler: %s", e)
-
-def konfiguration_laden(welche):
-    try:
-        c = load_config(welche)
-        local_buffer_dir = c.get("local_buffer_source_directory", DEFAULT_LOCAL_BUFFER_DIR)
-        if platform.system() == "Windows": 
-            backup_dir = c.get("backup_directory_win", DEFAULT_BACKUP_DIR_WIN) 
-        else:
-            backup_dir = c.get("backup_directory_linux", DEFAULT_BACKUP_DIR_LINUX)
-        
-        # Check if not in geladen: 
-        if not c.get("exe7z"):
-            raise KeyError("The key exe7z was not found in the loaded JSON data.") 
-        if not c.get("password"):
-            raise KeyError("The key password was not found in the loaded JSON data.") 
-        if not c.get("source_directories"):
-            raise KeyError("The key source_directories was not found in the loaded JSON data.") 
-        if not c.get("parameter7z"):
-            raise KeyError("The key parameter7z was not found in the loaded JSON data.") 
-        
-        return True, create_backup, c.get("source_directories"), local_buffer_dir, backup_dir, c.get("password"), c.get("parameter7z"), c.get("exe7z")
-    except Exception as e:
-        logging.error("Schwerwiegender Fehler: %s", e)
-        return False
 
 def selftest():
     """Führt einen Selbsttest durch, indem ein Testverzeichnis erstellt wird."""
@@ -213,5 +211,6 @@ def selftest():
     return test_root, source_dir, target_dir
 
 if __name__ == "__main__":
-    konfigurationen=['RN049932_to_H']
+    konfigurationen=['wuergback']
+    #konfigurationen=['RN049932_to_H']
     main(konfigurationen)
