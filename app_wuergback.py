@@ -54,10 +54,9 @@ logging.basicConfig(
 def load_config(param=None):
     """Lädt die Konfiguration aus der JSON-Datei oder erstellt eine Standardkonfiguration."""
     if param is None:
-        param = CONFIG_FILE
+        param = os.path.join(os.getcwd(), CONFIG_FILE)
     if not param.endswith(".json"):
         param = f"{param}.json"
-
     if not os.path.exists(param):
         default_config = {
             "source_directories": DEFAULT_SOURCE_DIRECTORY,
