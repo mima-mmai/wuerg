@@ -47,9 +47,8 @@ def get_default_source_dir():
 
 def load_config(param=None):
     """Lädt die Konfiguration aus der JSON-Datei oder erstellt eine Standardkonfiguration."""
-    if param == None:
-       param = CONFIG_FILE
-    param = f"{param}.json"
+    if param is None:
+        param = CONFIG_FILE
     if not os.path.exists(param):
         default_config = {
             "source_directories": [get_default_source_dir()],
@@ -145,11 +144,12 @@ def main(konfigurationsparameter):
         execute_selbsttest()
         logging.info(f"Starte Verarbeitung der Backup-Konfigurationen: {konfigurationsparameter}") 
         for k in konfigurationsparameter: 
-            geladen, create_backup_func, source_dirs, local_buffer_dir, backup_dir, password, parameter7z, exe7z = konfiguration_laden(k)
-            if geladen:    
+            result = konfiguration_laden(k)
+            if result:
+                geladen, create_backup_func, source_dirs, local_buffer_dir, backup_dir, password, parameter7z, exe7z = result
                 backups_parallel_erstellen(create_backup_func, source_dirs, local_buffer_dir, backup_dir, password, parameter7z, exe7z)    
             else:
-                logging.warning(f"w: Konnte nicht geladen werden: {k}") 
+                logging.warning(f"Konnte nicht geladen werden: {k}") 
     except Exception as e:
         logging.error("Schwerwiegender Fehler in main(): %s", e)
 
@@ -178,14 +178,14 @@ def konfiguration_laden(welche):
         # Check if not in geladen: 
         if not c.get("exe7z"):
             raise KeyError("The key exe7z was not found in the loaded JSON data.") 
-        if not c.get("passwort"):
-            raise KeyError("The key passwort was not found in the loaded JSON data.") 
+        if not c.get("password"):
+            raise KeyError("The key password was not found in the loaded JSON data.") 
         if not c.get("source_directories"):
             raise KeyError("The key source_directories was not found in the loaded JSON data.") 
         if not c.get("parameter7z"):
             raise KeyError("The key parameter7z was not found in the loaded JSON data.") 
         
-        return True, create_backup, c.get("source_directories"), local_buffer_dir, backup_dir, c.get("passwort"), c.get("parameter7z"), c.get("exe7z")
+        return True, create_backup, c.get("source_directories"), local_buffer_dir, backup_dir, c.get("password"), c.get("parameter7z"), c.get("exe7z")
     except Exception as e:
         logging.error("Schwerwiegender Fehler: %s", e)
         return False
