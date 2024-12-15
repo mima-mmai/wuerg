@@ -15,8 +15,18 @@ This is the wuergback backup utility.
 It backs up the specified directories to the configured backup directory using 7zip compression.
 To configure, edit the wuergback.json file.
 """
-CONFIG_FILE = "wuergback.json"
-DEFAULT_LOCAL_BUFFER_DIR = os.getcwd()
+
+def get_default_dirs_in_temp_dir(was):
+    """Ermittelt das temporäre Verzeichnis des Benutzers und erstellt ein Unterverzeichnis."""
+    temp_dir = tempfile.gettempdir()
+    pfad = os.path.join(temp_dir, was)
+    if not os.path.exists(pfad):
+        os.makedirs(pfad)
+    return pfad
+
+
+CONFIG_FILE = "wuergback"
+DEFAULT_LOCAL_BUFFER_DIR = get_default_dirs_in_temp_dir("wuergback-sicherungen")
 DEFAULT_BACKUP_DIR_WIN = "H:\\wuergback_target"
 DEFAULT_BACKUP_DIR_LINUX = "/home/austausch/wuergback_target"
 DEFAULT_PASSWORD = "geheim"
@@ -25,6 +35,9 @@ DEFAULT_exe7z_PATH_WIN = "C:\\pfadname\\7z.exe"
 DEFAULT_exe7z_PATH_LINUX = "/usr/bin/7z"
 DEFAULT_LOG_DIRECTORY = os.path.join(os.getcwd(), "wuergback_logs")
 DEFAULT_ARCHIVE_FORMAT = "7z"
+DEFAULT_SOURCE_DIRECTORY = get_default_dirs_in_temp_dir("wuergback"),
+
+
 
 # Log-Verzeichnis erstellen, falls es nicht existiert
 if not os.path.exists(DEFAULT_LOG_DIRECTORY):
@@ -34,24 +47,20 @@ if not os.path.exists(DEFAULT_LOG_DIRECTORY):
 logging.basicConfig(
     filename=os.path.join(DEFAULT_LOG_DIRECTORY, "wuergback.log"),
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    encoding="utf-8"
 )
-
-def get_default_source_dir():
-    """Ermittelt das temporäre Verzeichnis des Benutzers und erstellt ein Unterverzeichnis 'wuergback'."""
-    temp_dir = tempfile.gettempdir()
-    default_source_dir = os.path.join(temp_dir, "wuergback")
-    if not os.path.exists(default_source_dir):
-        os.makedirs(default_source_dir)
-    return default_source_dir
 
 def load_config(param=None):
     """Lädt die Konfiguration aus der JSON-Datei oder erstellt eine Standardkonfiguration."""
     if param is None:
         param = CONFIG_FILE
+    if not param.endswith(".json"):
+        param = f"{param}.json"
+
     if not os.path.exists(param):
         default_config = {
-            "source_directories": [get_default_source_dir()],
+            "source_directories": DEFAULT_SOURCE_DIRECTORY,
             "local_buffer_source_directory": DEFAULT_LOCAL_BUFFER_DIR,
             "backup_directory_win": DEFAULT_BACKUP_DIR_WIN,
             "backup_directory_linux": DEFAULT_BACKUP_DIR_LINUX,
@@ -59,6 +68,7 @@ def load_config(param=None):
             "parameter7z": DEFAULT_parameter7z,
             "exe7z_path": DEFAULT_exe7z_PATH_WIN if platform.system() == "Windows" else DEFAULT_exe7z_PATH_LINUX,
             "log_directory": DEFAULT_LOG_DIRECTORY,
+            #"log_directory": get_default_dirs_in_temp_dir("wuergback_logs"),
             "archive_format": DEFAULT_ARCHIVE_FORMAT
         }
         with open(param, "w") as file:
@@ -78,13 +88,16 @@ def create_default_structure(source_dir):
 
 def konfiguration_laden(welche):
         c = load_config(welche)
-        # Load and check 
+        #log_directory = c.get("log_directory", DEFAULT_LOCAL_BUFFER_DIR)
+        #Todo: Laden und dann dorhin loggen
+        # Load and falback, if not set 
         local_buffer_dir = c.get("local_buffer_source_directory", DEFAULT_LOCAL_BUFFER_DIR)
         if platform.system() == "Windows": 
             backup_dir = c.get("backup_directory_win", DEFAULT_BACKUP_DIR_WIN) 
         else:
             backup_dir = c.get("backup_directory_linux", DEFAULT_BACKUP_DIR_LINUX)
-        
+
+        # Load and verify        
         def schluessel(s):
             retVal= c.get(s)
             if not retVal:
@@ -115,6 +128,7 @@ def calculate_hash(file_path):
 
 def create_backup(source_dir, local_buffer_dir, backup_dir, password, parameter7z, exe7z):
     """Erstellt ein Backup eines Verzeichnisses."""
+    BACKUP_MSG = f"Backup aus {source_dir}"
     try:
         # Überprüfen, ob das Zielverzeichnis bereits existiert
         if not os.path.exists(local_buffer_dir):
@@ -129,6 +143,7 @@ def create_backup(source_dir, local_buffer_dir, backup_dir, password, parameter7
         
         # Backup erstellen
         command = [exe7z, "a", "-p" + password, *parameter7z, archive_name, source_dir]
+        logging.info(f"Starte Backup: {command}")
         subprocess.run(command, check=True)
 
         # Backup in das Zielverzeichnis kopieren
@@ -136,26 +151,20 @@ def create_backup(source_dir, local_buffer_dir, backup_dir, password, parameter7
             os.makedirs(backup_dir)
         backup_archive_name = os.path.join(backup_dir, os.path.basename(archive_name))
         shutil.copy2(archive_name, backup_archive_name)
-
-        # Hash-Berechnung und Vergleich
-        local_hash = calculate_hash(archive_name)
-        backup_hash = calculate_hash(backup_archive_name)
-
-        # Constants for log and return messages
-        BACKUP_MSG = f"Backup von {backup_archive_name} aus {source_dir}"
-        BACKUP_SUCCESS = f"{BACKUP_MSG} erfolgreich. Hashes stimmen überein."
-        BACKUP_HASH_MISMATCH = f"{BACKUP_MSG} erfolgreich, aber Hashes stimmen nicht überein!"
-        BACKUP_ERROR = f"Fehler beim {BACKUP_MSG}: {{e}}"
-
-        if local_hash == backup_hash:
-            logging.info(BACKUP_SUCCESS)
-            return BACKUP_SUCCESS
-        else:
-            logging.warning(BACKUP_HASH_MISMATCH)
-            return BACKUP_HASH_MISMATCH
+        BACKUP_MSG = f"Beim backup von {backup_archive_name} {BACKUP_MSG}"
+        Hash_Berechnung_und_Vergleich(archive_name, backup_archive_name, BACKUP_MSG)
+        return True, BACKUP_MSG 
     except Exception as e:
-        logging.error(BACKUP_ERROR.format(e=e))
-        return BACKUP_ERROR.format(e=e)
+        logging.error(f"Fehler beim {BACKUP_MSG}: {e}")
+        return False, f"Fehler beim {BACKUP_MSG}: {e}"
+
+def Hash_Berechnung_und_Vergleich(a_name, ba_name, BACKUP_MSG):
+    local_hash = calculate_hash(a_name)
+    backup_hash = calculate_hash(ba_name)
+    if local_hash == backup_hash:
+        logging.info(f"Hashes stimmen überein: {BACKUP_MSG} erfolgreich.")
+    else:
+        logging.warning(f"Hashes stimmen *nicht* überein! {BACKUP_MSG} nicht so erfolgreich")
 
 def main(konfigurationsparameter):
     """Hauptfunktion des Skripts."""
@@ -171,17 +180,22 @@ def main(konfigurationsparameter):
                 create_backup_func, source_dirs, local_buffer_dir, backup_dir, password, parameter7z, exe7z = result
                 backups_parallel_erstellen(create_backup_func, source_dirs, local_buffer_dir, backup_dir, password, parameter7z, exe7z)    
             else:
-                raise Exception(f"Konnte nicht geladen werden: {k}") 
+                raise Exception(f"Konnte nicht geladen werden: [{k}]") 
     except Exception as e:
-        raise RuntimeError("Schwerwiegender Fehler in main(): %s", e)
+        raise RuntimeError(f"Schwerwiegender Fehler in main(): [{e}]")
 
 def backups_parallel_erstellen(create_backup_func, source_dirs, local_buffer_dir, backup_dir, password, parameter7z, exe7z):
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = [executor.submit(create_backup_func, source_dir, local_buffer_dir, backup_dir, password, parameter7z, exe7z) for source_dir in source_dirs]
+        gesamtergebnis = None
         for future in as_completed(futures):
             result = future.result()
-            logging.info(result)
-
+            if result[0] == None or result[0] == False:
+                gesamtergebnis=False
+            logging.info(f"Backup beendet. Kein Fehler {result[1]}")
+        if gesamtergebnis ==False:
+            logging.info(f"{result[1]}")
+            raise RuntimeError (f"Während des Backups traten Fehler auf (!), siehe Logfile: {result[1]}")
 def execute_selbsttest():
     try:
         test_root, source_dir, target_dir = selftest()
