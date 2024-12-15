@@ -140,7 +140,10 @@ def create_backup(source_dir, local_buffer_dir, backup_dir, password, parameter7
         
         if os.path.exists(archive_name):
             raise FileExistsError(f"Panik: da existiert schon was: {archive_name}")
-        
+
+        if not os.path.exists(exe7z):
+            raise FileExistsError(f"Panik: da ist kein 7z {exe7z}")
+
         # Backup erstellen
         command = [exe7z, "a", "-p" + password, *parameter7z, archive_name, source_dir]
         logging.info(f"Starte Backup: {command}")
